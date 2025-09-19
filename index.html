@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlanificaMIR - Planificador de Estudio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Notion-Inspired Neutral -->
+    <!-- Application Structure Plan: Se ha diseñado una aplicación de página única (SPA) con dos vistas principales: el "Dashboard" y la "Vista de Asignatura". La navegación entre vistas se gestiona con JavaScript para una experiencia fluida. El objetivo es mantener al usuario en contexto, utilizando modales flotantes para todas las operaciones de creación y edición (asignaturas, temas, tareas). Esta arquitectura centraliza la entrada de datos, evita la recarga de páginas y crea un flujo de trabajo rápido y eficiente, ideal para una herramienta de planificación intensiva. -->
+    <!-- Visualization & Content Choices: Report Info -> Goal -> Viz/Presentation Method -> Interaction -> Justification. 1. Planificación de estudio (Calendario) -> Organizar tareas en el tiempo -> Calendario HTML dinámico -> Clic para añadir, Drag & Drop para mover -> El calendario es el método más intuitivo para la planificación temporal. 2. Gestión de temario (Asignaturas/Temas) -> Estructurar y seguir el progreso -> Listas y tablas HTML interactivas -> Clic para navegar, Checkboxes y Desplegables para actualizar -> Las tablas ofrecen una vista densa y clara del progreso. 3. Creación de datos (Asignaturas, Temas, Tareas) -> Entrada de datos sin perder el contexto -> Formularios en modales flotantes -> Rellenar y enviar -> Los modales centran la atención en una única tarea sin desorientar al usuario. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
+        .modal-hidden { transform: scale(0.9); opacity: 0; pointer-events: none; }
+        .overlay-hidden { opacity: 0; pointer-events: none; }
+        .task { cursor: grab; }
+        .task:active { cursor: grabbing; }
+        .task.completed { text-decoration: line-through; color: #9ca3af; }
+        .calendar-day:hover { background-color: #f1f3f5; }
+        .page { display: none; }
+        .page.active { display: block; }
+        .dragging { opacity: 0.5; border: 2px dashed #60a5fa; }
+    /* Annotations textarea: initial height equal to selects (box-sizing includes padding) and vertically resizable */
+    .annotations-input { height: 34px; min-height: 34px; box-sizing: border-box; resize: vertical; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div id="app-container" class="p-4 md:p-8 max-w-screen-2xl mx-auto">
+
+        <!-- ===== VISTA PRINCIPAL / DASHBOARD ===== -->
+        <main id="dashboard-page" class="page active">
+            <header class="mb-8">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">PlanificaMIR</h1>
+                        <p class="text-gray-500 mt-1 text-sm sm:text-base">Tu centro de mando para la preparación del MIR.</p>
+                    </div>
+                </div>
+            </header>
+
+            <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,850px)_minmax(0,1fr)] gap-8">
+                
+                <!-- Columna del Calendario -->
+                <div class="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+                    <div id="calendar-header" class="flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-2">
+                            <button id="prev-month" class="p-2 rounded-md hover:bg-gray-100">&lt;</button>
+                            <button id="next-month" class="p-2 rounded-md hover:bg-gray-100">&gt;</button>
+                            <button id="today-btn" class="px-3 py-1 text-sm border rounded-md hover:bg-gray-100">Hoy</button>
+                        </div>
+                        <h2 id="month-year" class="text-lg sm:text-xl font-semibold text-right"></h2>
+                    </div>
+                    <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
+                </div>
+
+                <!-- Columna de Tareas y Asignaturas -->
+                <aside class="space-y-8">
+                    <div class="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-semibold text-lg">Tareas para el <span id="selected-date-display"></span></h3>
+                            <button id="add-task-btn" class="text-sm bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition-colors whitespace-nowrap" style="display: none;">+ Añadir</button>
+                        </div>
+                        <div id="today-tasks-list" class="space-y-2 text-sm">
+                            <p class="text-gray-400">Selecciona un día en el calendario.</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-semibold text-lg">Asignaturas</h3>
+                            <button id="add-subject-btn" class="text-sm bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition-colors">+ Añadir</button>
+                        </div>
+                        <div id="subjects-list" class="space-y-2 text-sm"></div>
+                    </div>
+                </aside>
+
+            </div>
+        </main>
+
+        <!-- ===== VISTA DE DETALLE DE ASIGNATURA ===== -->
+        <section id="subject-detail-page" class="page">
+            <header class="mb-8">
+                <button id="back-to-dashboard-btn" class="text-blue-500 hover:underline mb-4">&larr; Volver al Dashboard</button>
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-3">
+                        <h1 id="subject-detail-title" class="text-2xl sm:text-3xl font-bold text-gray-900"></h1>
+                        <span id="subject-topics-count" class="text-sm text-gray-500">0 temas</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="toggle-filters-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 transition-colors">Filtros</button>
+                        <button id="add-round-btn" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors">+ Añadir Vuelta</button>
+                        <button id="delete-round-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors">- Eliminar Vuelta</button>
+                        <button id="add-topic-btn" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">+ Añadir Tema</button>
+                    </div>
+                </div>
+            </header>
+            <!-- filtros colapsables para la tabla de temas -->
+            <div id="filters-panel" class="bg-white p-4 sm:p-4 rounded-lg shadow-sm border border-gray-200 mb-4" style="display:none;">
+                <form id="filters-form" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                        <label class="text-xs text-gray-600">Nombre</label>
+                        <input id="filter-name" placeholder="filter nombre" class="border p-1 w-full text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-600">Lectura</label>
+                            <select id="filter-reading" class="border p-1 text-sm w-full"><option value="">-</option><option value="1">Si</option><option value="0">No</option></select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-600">Esquema</label>
+                            <select id="filter-esquema" class="border p-1 text-sm w-full"><option value="">-</option><option value="1">Si</option><option value="0">No</option></select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-600">Importancia</label>
+                            <select id="filter-importance" class="border p-1 text-sm w-full"><option value="">-</option><option value="Muy alta">Muy alta</option><option value="Alta">Alta</option><option value="Media">Media</option><option value="Baja">Baja</option></select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-600">Rentabilidad</label>
+                            <select id="filter-rentability" class="border p-1 text-sm w-full"><option value="">-</option><option value="Muy alta">Muy alta</option><option value="Alta">Alta</option><option value="Media">Media</option><option value="Baja">Baja</option></select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-600">Vueltas</label>
+                        <div id="rounds-filters" class="flex items-center gap-1 flex-wrap"></div>
+                    </div>
+                    <div class="md:col-span-3 flex gap-2 justify-end">
+                        <button type="button" id="clear-filters-btn" class="px-3 py-1 bg-gray-200 rounded">Limpiar</button>
+                    </div>
+                </form>
+            </div>
+            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-gray-50">
+                                <tr id="topics-header-row">
+                                    <th class="p-3 font-semibold text-center">Tema</th>
+                                    <th class="p-3 font-semibold text-center">Lectura</th>
+                                    <th class="p-3 font-semibold text-center" id="esquema-header">Esquema</th>
+                                    <!-- rounds headers inserted after esquema -->
+                                    <th class="p-3 font-semibold text-center">Importancia</th>
+                                    <th class="p-3 font-semibold text-center">Rentabilidad</th>
+                                    <th class="p-3 font-semibold text-center">Anotaciones</th>
+                                    <th class="p-3 font-semibold text-center">Acciones</th>
+                                </tr>
+                        
+                            </thead>
+                    <tbody id="topics-table-body">
+                    </tbody>
+                    
+                </table>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- ===== MODAL Y OVERLAY ===== -->
+    <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-50 transition-opacity overlay-hidden"></div>
+    <div id="modal-container" class="fixed inset-0 flex items-center justify-center p-4 transition-all modal-hidden">
+        <div id="modal-content" class="bg-white rounded-lg shadow-2xl w-full max-w-md">
+            <!-- Contenido del modal se inyecta aquí -->
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- ESTADO Y DATOS DE LA APLICACIÓN ---
+        let state = {
+            currentDate: new Date(),
+            selectedDate: null,
+            activePage: 'dashboard-page',
+            currentSubjectId: null,
+            draggedTaskId: null,
+        };
+
+        let data = {
+            subjects: [],
+            tasks: [],
+        };
+
+        // --- SELECTORES DEL DOM ---
+        const calendarGrid = document.getElementById('calendar-grid');
+        const monthYearDisplay = document.getElementById('month-year');
+        const prevMonthBtn = document.getElementById('prev-month');
+        const nextMonthBtn = document.getElementById('next-month');
+        const todayBtn = document.getElementById('today-btn');
+        const subjectsList = document.getElementById('subjects-list');
+        const addSubjectBtn = document.getElementById('add-subject-btn');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalContainer = document.getElementById('modal-container');
+        const modalContent = document.getElementById('modal-content');
+        const todayTasksList = document.getElementById('today-tasks-list');
+        const selectedDateDisplay = document.getElementById('selected-date-display');
+        const addTaskBtn = document.getElementById('add-task-btn');
+        
+        const dashboardPage = document.getElementById('dashboard-page');
+        const subjectDetailPage = document.getElementById('subject-detail-page');
+        const backToDashboardBtn = document.getElementById('back-to-dashboard-btn');
+        const subjectDetailTitle = document.getElementById('subject-detail-title');
+        const addTopicBtn = document.getElementById('add-topic-btn');
+        const topicsTableBody = document.getElementById('topics-table-body');
+
+        // --- PERSISTENCIA DE DATOS ---
+        const loadData = async () => {
+            try {
+                const response = await fetch('http://localhost/PLANIFICAMIR/api.php');
+                const result = await response.json();
+                data.subjects = result.subjects || [];
+                data.tasks = result.tasks || [];
+            } catch (error) {
+                console.error('Error loading data:', error);
+                data.subjects = [];
+                data.tasks = [];
+            }
+        };
+
+        // Check DB/API connectivity before proceeding. If it fails, show modal with instructions
+        const checkDbConnection = async () => {
+            try {
+                const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', { cache: 'no-store' });
+                if(!resp.ok) throw new Error('HTTP ' + resp.status);
+                const json = await resp.json().catch(() => null);
+                const ok = json && (Array.isArray(json.subjects) || Array.isArray(json.tasks) || json.success !== undefined);
+                if(ok) return true;
+            } catch (err){
+                console.warn('DB/API check failed', err);
+            }
+            // show modal instructing to start XAMPP (Apache + MySQL)
+            const msg = `
+                <div class="p-6">
+                    <h3 class="text-lg font-semibold mb-4">Conexión a la base de datos no disponible</h3>
+                    <p class="mb-4">Parece que la aplicación no puede conectarse al servidor. Abre el panel de XAMPP y pulsa <strong>Start</strong> en <strong>Apache</strong> y <strong>MySQL</strong>. Espera a que ambos indicadores se pongan en verde y luego pulsa <strong>Reintentar</strong>.</p>
+                    <div class="flex gap-2 justify-end">
+                        <button id="db-retry-btn" class="px-4 py-2 bg-blue-500 text-white rounded">Reintentar</button>
+                        <button id="db-close-btn" class="px-4 py-2 bg-gray-200 rounded">Cerrar</button>
+                    </div>
+                </div>
+            `;
+            modalContent.innerHTML = msg;
+            modalOverlay.classList.remove('overlay-hidden');
+            modalContainer.classList.remove('modal-hidden');
+
+            const retryBtn = document.getElementById('db-retry-btn');
+            const closeBtn = document.getElementById('db-close-btn');
+            const tryAgain = async () => {
+                retryBtn.disabled = true;
+                retryBtn.textContent = 'Comprobando...';
+                const ok = await checkDbConnection();
+                retryBtn.disabled = false;
+                retryBtn.textContent = 'Reintentar';
+                if(ok){
+                    closeModal();
+                    // load data and render app now that connection is back
+                    await loadData();
+                    if(!state.selectedDate) {
+                        const today = new Date();
+                        const year = today.getFullYear();
+                        const month = String(today.getMonth() + 1).padStart(2, '0');
+                        const day = String(today.getDate()).padStart(2, '0');
+                        state.selectedDate = `${year}-${month}-${day}`;
+                    }
+                    renderApp();
+                }
+            };
+            retryBtn.addEventListener('click', tryAgain);
+            closeBtn.addEventListener('click', closeModal);
+            return false;
+        };
+
+        const saveData = () => {
+            // No need to save locally anymore, data is saved to DB via API calls
+        };
+
+        // --- LÓGICA DE RENDERIZADO ---
+
+        const renderApp = () => {
+            renderPage();
+            if (state.activePage === 'dashboard-page') {
+                renderCalendar();
+                renderSubjectsList();
+                renderTodayTasks();
+            } else if (state.activePage === 'subject-detail-page') {
+                renderSubjectDetailPage();
+            }
+        };
+
+        const renderPage = () => {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(state.activePage).classList.add('active');
+        };
+
+        const renderCalendar = () => {
+            calendarGrid.innerHTML = '';
+            const date = state.currentDate;
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            
+            monthYearDisplay.textContent = `${date.toLocaleString('es-ES', { month: 'long' })} ${year}`;
+
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const startDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+
+            const daysOfWeek = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+            daysOfWeek.forEach(day => {
+                const dayEl = document.createElement('div');
+                dayEl.className = 'text-center font-semibold text-xs text-gray-500 py-2';
+                dayEl.textContent = day;
+                calendarGrid.appendChild(dayEl);
+            });
+
+            for (let i = 0; i < startDay; i++) {
+                calendarGrid.appendChild(document.createElement('div'));
+            }
+
+            for (let i = 1; i <= lastDay.getDate(); i++) {
+                const dayEl = document.createElement('div');
+                const currentDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                dayEl.className = 'calendar-day border border-gray-100 p-2 h-16 sm:h-20 flex flex-col transition-colors cursor-pointer';
+                dayEl.dataset.date = currentDateStr;
+                
+                const dayNumber = document.createElement('span');
+                dayNumber.className = 'text-sm';
+                dayNumber.textContent = i;
+                if (currentDateStr === state.selectedDate) {
+                    dayNumber.classList.add('bg-blue-500', 'text-white', 'rounded-full', 'w-6', 'h-6', 'flex', 'items-center', 'justify-center');
+                }
+                dayEl.appendChild(dayNumber);
+                
+                const incompleteTasksCount = data.tasks.filter(t => t.date === currentDateStr && !t.completed).length;
+
+                if (incompleteTasksCount > 0) {
+                    const taskCountBadge = document.createElement('div');
+                    taskCountBadge.className = 'mt-auto flex items-center justify-end';
+                    taskCountBadge.innerHTML = `
+                        <span class="bg-red-500 text-white text-xs font-semibold w-5 h-5 flex items-center justify-center rounded-full">
+                            ${incompleteTasksCount}
+                        </span>
+                    `;
+                    dayEl.appendChild(taskCountBadge);
+                }
+                
+                calendarGrid.appendChild(dayEl);
+            }
+        };
+        
+        const renderSubjectsList = () => {
+            subjectsList.innerHTML = '';
+            if (data.subjects.length === 0) {
+                subjectsList.innerHTML = '<p class="text-gray-400">Aún no hay asignaturas.</p>';
+                return;
+            }
+            data.subjects.forEach(subject => {
+                const subjectEl = document.createElement('a');
+                subjectEl.href = '#';
+                subjectEl.className = 'block p-2 rounded-md hover:bg-gray-100 transition-colors';
+                subjectEl.textContent = subject.name;
+                subjectEl.dataset.subjectId = subject.id;
+                subjectEl.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    state.currentSubjectId = subject.id;
+                    state.activePage = 'subject-detail-page';
+                    renderApp();
+                });
+                subjectsList.appendChild(subjectEl);
+            });
+        };
+
+        const renderTodayTasks = () => {
+            if (!state.selectedDate) {
+                todayTasksList.innerHTML = '<p class="text-gray-400">Selecciona un día en el calendario.</p>';
+                selectedDateDisplay.textContent = '...';
+                addTaskBtn.style.display = 'none';
+                return;
+            }
+            
+            addTaskBtn.style.display = 'block';
+            const dateObj = new Date(state.selectedDate + 'T00:00:00');
+            selectedDateDisplay.textContent = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+
+            const tasksOnDay = data.tasks.filter(t => t.date === state.selectedDate);
+            todayTasksList.innerHTML = '';
+            
+            if (tasksOnDay.length === 0) {
+                todayTasksList.innerHTML = '<p class="text-gray-400">No hay tareas para este día.</p>';
+                return;
+            }
+            
+            tasksOnDay.forEach(task => {
+                const taskEl = document.createElement('div');
+                taskEl.className = 'task flex items-center gap-2 p-1 rounded-md hover:bg-gray-100';
+                taskEl.draggable = true;
+                taskEl.dataset.taskId = task.id;
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = task.completed;
+                checkbox.className = 'form-checkbox h-4 w-4 text-blue-600 rounded flex-shrink-0';
+                checkbox.dataset.taskId = task.id;
+                checkbox.addEventListener('change', async (e) => {
+                    e.stopPropagation();
+                    task.completed = checkbox.checked;
+                    try {
+                        await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'update_task', id: task.id, updates: { completed: checkbox.checked } })
+                        });
+                    } catch (error) {
+                        console.error('Error updating task:', error);
+                    }
+                    renderApp();
+                });
+                
+                const label = document.createElement('span');
+                label.textContent = task.name;
+                label.className = task.completed ? 'completed flex-grow' : 'flex-grow';
+
+                taskEl.appendChild(checkbox);
+                taskEl.appendChild(label);
+                todayTasksList.appendChild(taskEl);
+            });
+        };
+
+        const getFilterValues = () => {
+            return {
+                name: document.getElementById('filter-name').value.trim().toLowerCase(),
+                reading: document.getElementById('filter-reading').value,
+                esquema: document.getElementById('filter-esquema').value,
+                importance: document.getElementById('filter-importance').value,
+                rentability: document.getElementById('filter-rentability').value,
+            };
+        };
+
+        // Return background color classes for importance/rentability values (use white text)
+        // Pastel tone mapping. Use darker text where needed for contrast.
+        const importanceBgClass = (imp) => {
+            switch(imp){
+                case 'Muy alta': return 'bg-green-700 text-white';    // deeper pastel green
+                case 'Alta': return 'bg-green-300 text-black';       // light pastel green
+                case 'Media': return 'bg-yellow-200 text-black';     // pastel yellow (requested)
+                case 'Baja': return 'bg-red-200 text-black';         // pastel red
+                default: return '';
+            }
+        };
+
+        const rentabilityBgClass = (r) => importanceBgClass(r);
+
+        const renderSubjectDetailPage = () => {
+            const subject = data.subjects.find(s => s.id === state.currentSubjectId);
+            if (!subject) {
+                state.activePage = 'dashboard-page';
+                renderApp();
+                return;
+            }
+            subjectDetailTitle.textContent = subject.name;
+
+            // Determine max rounds across topics
+            let maxRounds = 0;
+            subject.topics.forEach(t => { if(t.rounds && t.rounds.length > maxRounds) maxRounds = t.rounds.length; });
+
+            // Build header rounds columns dynamically
+            const headerRow = document.getElementById('topics-header-row');
+            // remove existing dynamic round headers if any
+            Array.from(headerRow.querySelectorAll('.round-header')).forEach(n => n.remove());
+            // insert round headers sequentially after the Esquema header so they appear V1, V2, ... left-to-right
+            const esquemaHeader = headerRow.querySelector('#esquema-header');
+            let insertRef = esquemaHeader || headerRow.firstChild;
+            for(let r=1;r<=maxRounds;r++){
+                const th = document.createElement('th');
+                th.className = 'p-3 font-semibold text-center round-header';
+                th.textContent = `V${r}`;
+                headerRow.insertBefore(th, insertRef.nextSibling);
+                insertRef = th; // next round will be inserted after this one
+            }
+
+            // Setup a single dropdown filter for rounds (1..maxRounds)
+            const roundsFiltersContainer = document.getElementById('rounds-filters');
+            // preserve previous selection so value doesn't reset on re-render
+            const prevRound = document.getElementById('round-filter-select') ? document.getElementById('round-filter-select').value : '';
+            roundsFiltersContainer.innerHTML = '';
+            const roundSelect = document.createElement('select');
+            roundSelect.id = 'round-filter-select';
+            roundSelect.className = 'border p-1 text-sm mr-1';
+            let opts = '<option value="">-</option>';
+            for(let r=1;r<=maxRounds;r++) opts += `<option value="${r}">${r}</option>`;
+            roundSelect.innerHTML = opts;
+            if(prevRound) roundSelect.value = prevRound;
+            roundsFiltersContainer.appendChild(roundSelect);
+
+            const filters = getFilterValues();
+
+            topicsTableBody.innerHTML = '';
+
+            let filtered = subject.topics.slice();
+            // apply name filter
+            if(filters.name) filtered = filtered.filter(t => t.name.toLowerCase().includes(filters.name));
+            if(filters.reading !== '') filtered = filtered.filter(t => String(t.reading) === filters.reading);
+            if(filters.esquema !== '') filtered = filtered.filter(t => String(t.esquema) === filters.esquema);
+            if(filters.importance) filtered = filtered.filter(t => t.importance === filters.importance);
+            if(filters.rentability) filtered = filtered.filter(t => t.rentability === filters.rentability);
+
+            // rounds filter - single select by round_number
+            const selectedRound = document.getElementById('round-filter-select') ? document.getElementById('round-filter-select').value : '';
+            if(selectedRound !== ''){
+                const rn = parseInt(selectedRound);
+                filtered = filtered.filter(t => {
+                    const round = t.rounds ? t.rounds.find(rr => rr.round_number === rn) : null;
+                    const completed = round ? (round.completed ? '1' : '0') : '0';
+                    return completed === '1';
+                });
+            }
+
+            filtered.sort((a,b) => a.name.localeCompare(b.name)).forEach(topic => {
+                const row = document.createElement('tr');
+                row.className = 'border-b';
+                // build rounds cells in order V1..Vn by matching round_number
+                let roundsHtml = '';
+                for(let r=1;r<=maxRounds;r++){
+                    const round = topic.rounds ? topic.rounds.find(rr => rr.round_number === r) : null;
+                    const checked = round && round.completed ? 'checked' : '';
+                    roundsHtml += `<td class="p-3 text-center"><input type="checkbox" class="h-4 w-4 round-checkbox" data-round-id="${round ? round.id : ''}" data-topic-id="${topic.id}" data-round-index="${r}" ${checked}></td>`;
+                }
+
+                row.innerHTML = `
+                    <td class="p-3 text-center">${topic.name}</td>
+                    <td class="p-3 text-center"><input type="checkbox" class="h-4 w-4" data-topic-id="${topic.id}" data-prop="reading" ${topic.reading ? 'checked' : ''}></td>
+                    <td class="p-3 text-center"><input type="checkbox" class="h-4 w-4" data-topic-id="${topic.id}" data-prop="esquema" ${topic.esquema ? 'checked' : ''}></td>
+                    ${roundsHtml}
+                    <td class="p-3 text-center"><select class="border rounded p-1 w-full importance-select" data-topic-id="${topic.id}" data-prop="importance">
+                        <option value="Baja" style="background-color:#fecaca;color:#000000" ${topic.importance === 'Baja' ? 'selected' : ''}>Baja</option>
+                        <option value="Media" style="background-color:#fef08a;color:#000000" ${topic.importance === 'Media' ? 'selected' : ''}>Media</option>
+                        <option value="Alta" style="background-color:#86efac;color:#000000" ${topic.importance === 'Alta' ? 'selected' : ''}>Alta</option>
+                        <option value="Muy alta" style="background-color:#16a34a;color:#ffffff" ${topic.importance === 'Muy alta' ? 'selected' : ''}>Muy alta</option>
+                    </select></td>
+                    <td class="p-3 text-center"><select class="border rounded p-1 w-full rentability-select" data-topic-id="${topic.id}" data-prop="rentability">
+                        <option value="Baja" style="background-color:#fecaca;color:#000000" ${topic.rentability === 'Baja' ? 'selected' : ''}>Baja</option>
+                        <option value="Media" style="background-color:#fef08a;color:#000000" ${topic.rentability === 'Media' ? 'selected' : ''}>Media</option>
+                        <option value="Alta" style="background-color:#86efac;color:#000000" ${topic.rentability === 'Alta' ? 'selected' : ''}>Alta</option>
+                        <option value="Muy alta" style="background-color:#16a34a;color:#ffffff" ${topic.rentability === 'Muy alta' ? 'selected' : ''}>Muy alta</option>
+                    </select></td>
+                    <td class="p-3 text-center">
+                    <button class="annotations-btn px-3 py-1 rounded border" data-topic-id="${topic.id}" style="min-width:80px;">
+                        ${topic.annotations ? 'Ver' : 'Añadir'}
+                    </button>
+                </td>
+                     <td class="p-3 text-center">
+                        <button class="delete-topic-btn text-red-500 hover:text-red-700 font-bold" data-topic-id="${topic.id}">X</button>
+                    </td>
+                `;
+                topicsTableBody.appendChild(row);
+            });
+
+            // update topics count (show next to subject title)
+            document.getElementById('subject-topics-count').textContent = `${filtered.length} temas`;
+
+            // colorize selects (apply text color classes, remove any previous color classes)
+            const bgClassCandidates = ['bg-green-900','bg-green-800','bg-green-600','bg-orange-600','bg-yellow-600','bg-red-600','text-white','text-black'];
+            Array.from(document.querySelectorAll('.importance-select')).forEach(sel => {
+                // remove possible bg/text classes
+                bgClassCandidates.forEach(c => sel.classList.remove(c));
+                const cls = importanceBgClass(sel.value);
+                if(cls) cls.split(' ').forEach(c => sel.classList.add(c));
+            });
+            Array.from(document.querySelectorAll('.rentability-select')).forEach(sel => {
+                bgClassCandidates.forEach(c => sel.classList.remove(c));
+                const cls = rentabilityBgClass(sel.value);
+                if(cls) cls.split(' ').forEach(c => sel.classList.add(c));
+            });
+
+            // style annotation buttons: 'Ver' => blue bg white text, 'Añadir' => white bg black text; ensure equal width
+            Array.from(document.querySelectorAll('.annotations-btn')).forEach(btn => {
+                btn.classList.remove('bg-blue-500','text-white','bg-white','text-black','border-gray-300');
+                // ensure same min width
+                btn.style.minWidth = '80px';
+                if(btn.textContent.trim() === 'Ver'){
+                    btn.classList.add('bg-blue-500','text-white');
+                    btn.classList.remove('border');
+                } else {
+                    btn.classList.add('bg-white','text-black','border','border-gray-300');
+                }
+            });
+
+            // wire up round filter change
+            const rf = document.getElementById('round-filter-select');
+            if(rf) rf.addEventListener('change', renderSubjectDetailPage);
+            // wire up top filters
+            ['filter-name','filter-reading','filter-esquema','filter-importance','filter-rentability'].forEach(id => document.getElementById(id).addEventListener('input', renderSubjectDetailPage));
+        };
+
+        // --- LÓGICA DE MODALES ---
+        const openModal = (type) => {
+            let contentHTML = '';
+            switch (type) {
+                case 'add-subject':
+                    contentHTML = `
+                        <form id="add-subject-form" class="p-6">
+                            <h3 class="text-lg font-semibold mb-4">Añadir Nueva Asignatura</h3>
+                            <input type="text" id="subject-name" placeholder="Nombre de la asignatura" class="w-full border rounded p-2 mb-4" required>
+                            <div class="flex justify-end gap-2">
+                                <button type="button" class="modal-close-btn px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancelar</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Guardar</button>
+                            </div>
+                        </form>
+                    `;
+                    break;
+                case 'add-topic':
+                     contentHTML = `
+                        <form id="add-topic-form" class="p-6">
+                            <h3 class="text-lg font-semibold mb-4">Añadir Nuevo Tema</h3>
+                            <input type="text" id="topic-name" placeholder="Nombre del tema" class="w-full border rounded p-2 mb-4" required>
+                            <div class="flex justify-end gap-2">
+                                <button type="button" class="modal-close-btn px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancelar</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Guardar</button>
+                            </div>
+                        </form>
+                    `;
+                    break;
+                 case 'add-task':
+                    contentHTML = `
+                        <form id="add-task-form" class="p-6">
+                            <h3 class="text-lg font-semibold mb-4">Añadir Tarea para ${new Date(state.selectedDate+'T00:00:00').toLocaleDateString('es-ES')}</h3>
+                            <input type="text" id="task-name" placeholder="Nombre de la tarea" class="w-full border rounded p-2 mb-4" required>
+                            <div class="flex justify-end gap-2">
+                                <button type="button" class="modal-close-btn px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancelar</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Guardar</button>
+                            </div>
+                        </form>
+                    `;
+                    break;
+                case 'edit-annotations':
+                    // expects state._editingTopicId to be set before opening
+                    const topicForEdit = (function(){
+                        const subj = data.subjects.find(s => s.id === state.currentSubjectId);
+                        if(!subj) return null;
+                        return subj.topics.find(t => t.id === state._editingTopicId) || null;
+                    })();
+                    const existingText = topicForEdit ? (topicForEdit.annotations || '') : '';
+                    contentHTML = `
+                        <form id="edit-annotations-form" class="p-6">
+                            <h3 class="text-lg font-semibold mb-4">Anotaciones para: ${topicForEdit ? topicForEdit.name : ''}</h3>
+                            <textarea id="annotations-text" class="w-full border rounded p-2 mb-4" rows="6">${existingText}</textarea>
+                            <div class="flex justify-end gap-2">
+                                <button type="button" class="modal-close-btn px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancelar</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Guardar</button>
+                            </div>
+                        </form>
+                    `;
+                    break;
+            }
+            modalContent.innerHTML = contentHTML;
+            modalOverlay.classList.remove('overlay-hidden');
+            modalContainer.classList.remove('modal-hidden');
+        };
+
+        const closeModal = () => {
+            modalOverlay.classList.add('overlay-hidden');
+            modalContainer.classList.add('modal-hidden');
+        };
+
+        // --- MANEJADORES DE EVENTOS ---
+        
+        prevMonthBtn.addEventListener('click', () => {
+            state.currentDate.setMonth(state.currentDate.getMonth() - 1);
+            renderCalendar();
+        });
+
+        nextMonthBtn.addEventListener('click', () => {
+            state.currentDate.setMonth(state.currentDate.getMonth() + 1);
+            renderCalendar();
+        });
+
+        todayBtn.addEventListener('click', () => {
+            const today = new Date();
+            state.currentDate = new Date(today.getFullYear(), today.getMonth(), 1);
+
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            state.selectedDate = `${year}-${month}-${day}`;
+
+            renderApp();
+        });
+        
+        addSubjectBtn.addEventListener('click', () => openModal('add-subject'));
+        addTopicBtn.addEventListener('click', () => openModal('add-topic'));
+        backToDashboardBtn.addEventListener('click', () => {
+            state.activePage = 'dashboard-page';
+            state.currentSubjectId = null;
+            renderApp();
+        });
+
+        addTaskBtn.addEventListener('click', () => {
+            if (state.selectedDate) {
+                openModal('add-task');
+            }
+        });
+
+        // Toggle filters panel
+        document.getElementById('toggle-filters-btn').addEventListener('click', () => {
+            const panel = document.getElementById('filters-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        });
+
+        // Clear filters (filtering is immediate)
+        document.getElementById('clear-filters-btn').addEventListener('click', () => {
+            document.getElementById('filters-form').reset();
+            // clear round select
+            const rf = document.getElementById('round-filter-select'); if(rf) rf.value = '';
+            renderSubjectDetailPage();
+        });
+
+        // delete-round handler
+        document.getElementById('delete-round-btn').addEventListener('click', async () => {
+            if(!state.currentSubjectId) return;
+            if(!confirm('Eliminar la última vuelta para esta asignatura?')) return;
+            try {
+                const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'delete_round', subject_id: state.currentSubjectId })
+                });
+                const res = await resp.json();
+                if(res.success){
+                    await loadData();
+                    renderSubjectDetailPage();
+                } else {
+                    console.error('delete_round failed', res);
+                }
+            } catch (error) {
+                console.error('Error deleting round:', error);
+            }
+        });
+
+        modalContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-close-btn')) {
+                closeModal();
+            }
+        });
+
+        modalOverlay.addEventListener('click', closeModal);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Event delegation for forms and dynamic content
+        document.body.addEventListener('submit', async (e) => {
+            if (e.target.id === 'add-subject-form') {
+                e.preventDefault();
+                const subjectName = document.getElementById('subject-name').value.trim();
+                if (subjectName) {
+                    try {
+                        const response = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'add_subject', name: subjectName })
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            data.subjects.push({ id: result.id, name: subjectName, topics: [] });
+                            data.subjects.sort((a,b) => a.name.localeCompare(b.name));
+                            renderSubjectsList();
+                            closeModal();
+                        }
+                    } catch (error) {
+                        console.error('Error adding subject:', error);
+                    }
+                }
+            }
+            if (e.target.id === 'add-topic-form') {
+                e.preventDefault();
+                const topicName = document.getElementById('topic-name').value.trim();
+                const subject = data.subjects.find(s => s.id === state.currentSubjectId);
+                if (topicName && subject) {
+                    try {
+                        const response = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'add_topic', subject_id: state.currentSubjectId, name: topicName })
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            subject.topics.push({ 
+                                id: result.id, 
+                                name: topicName, 
+                                reading: false, 
+                                esquema: false, 
+                                importance: 'Media', rentability: 'Media',
+                                rounds: []
+                            });
+                            renderSubjectDetailPage();
+                            closeModal();
+                        }
+                    } catch (error) {
+                        console.error('Error adding topic:', error);
+                    }
+                }
+            }
+            if(e.target.id === 'add-task-form') {
+                e.preventDefault();
+                const taskName = document.getElementById('task-name').value.trim();
+                if(taskName && state.selectedDate){
+                    try {
+                        const response = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'add_task', name: taskName, date: state.selectedDate })
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            data.tasks.push({
+                                id: result.id,
+                                name: taskName,
+                                date: state.selectedDate,
+                                completed: false,
+                            });
+                            renderApp();
+                            closeModal();
+                        }
+                    } catch (error) {
+                        console.error('Error adding task:', error);
+                    }
+                }
+            }
+            if(e.target.id === 'edit-annotations-form'){
+                e.preventDefault();
+                const txt = document.getElementById('annotations-text').value;
+                const topicId = state._editingTopicId;
+                if(topicId != null){
+                    try {
+                        const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'update_topic', id: topicId, updates: { annotations: txt } })
+                        });
+                        const res = await resp.json();
+                        if(res.success){
+                            // update local model
+                            const subj = data.subjects.find(s => s.id === state.currentSubjectId);
+                            if(subj){
+                                const topic = subj.topics.find(t => t.id === topicId);
+                                if(topic) topic.annotations = txt;
+                            }
+                            closeModal();
+                            renderSubjectDetailPage();
+                        }
+                    } catch(err){ console.error('Error saving annotations', err); }
+                }
+            }
+        });
+        
+        document.body.addEventListener('change', async e => {
+            // topic checkbox/select changes
+            if(e.target.dataset.topicId && e.target.dataset.prop){
+                const topicId = parseInt(e.target.dataset.topicId);
+                const prop = e.target.dataset.prop;
+                const subject = data.subjects.find(s => s.id === state.currentSubjectId);
+                const topic = subject.topics.find(t => t.id === topicId);
+                if(topic){
+                    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+                    topic[prop] = value;
+                    try {
+                        await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'update_topic', id: topicId, updates: { [prop]: value } })
+                        });
+                        // Immediately update select background/text classes so the change is visible
+                        if(e.target.tagName === 'SELECT' && (prop === 'importance' || prop === 'rentability')){
+                            const sel = e.target;
+                            const bgClassCandidates = ['bg-green-700','bg-green-300','bg-yellow-200','bg-red-200','bg-green-900','bg-green-600','bg-orange-600','bg-red-600','text-white','text-black'];
+                            bgClassCandidates.forEach(c => sel.classList.remove(c));
+                            const cls = prop === 'importance' ? importanceBgClass(value) : rentabilityBgClass(value);
+                            if(cls) cls.split(' ').forEach(c => sel.classList.add(c));
+                        }
+                    } catch (error) {
+                        console.error('Error updating topic:', error);
+                    }
+                }
+            }
+
+            // round checkbox toggles
+            if(e.target.classList.contains('round-checkbox')){
+                const topicId = parseInt(e.target.dataset.topicId);
+                const idx = parseInt(e.target.dataset.roundIndex) || 1; // 1-based
+                const checked = e.target.checked;
+                const subject = data.subjects.find(s => s.id === state.currentSubjectId);
+                const topic = subject.topics.find(t => t.id === topicId);
+                // determine maxRounds for this subject
+                let maxRounds = 0;
+                if(subject){
+                    subject.topics.forEach(t => { if(t.rounds && t.rounds.length > maxRounds) maxRounds = t.rounds.length; });
+                }
+                try {
+                    if(checked){
+                        // check 1..idx
+                        for(let r=1;r<=idx;r++){
+                            // find round id by round_number
+                            const existing = topic.rounds ? topic.rounds.find(rr => rr.round_number === r) : null;
+                            if(existing){
+                                // update
+                                await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'update_round', id: existing.id, updates: { completed: 1 } })
+                                });
+                                existing.completed = 1;
+                            } else {
+                                // create
+                                const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'upsert_round', topic_id: topicId, round_number: r, completed: 1 })
+                                });
+                                const res = await resp.json();
+                                if(res.success && res.id){
+                                    const newRound = { id: res.id, topic_id: topicId, round_number: r, completed: 1 };
+                                    topic.rounds = topic.rounds || [];
+                                    topic.rounds.push(newRound);
+                                }
+                            }
+                            // update checkbox in DOM if present
+                            const cb = document.querySelector(`.round-checkbox[data-topic-id="${topicId}"][data-round-index="${r}"]`);
+                            if(cb){ cb.checked = true; cb.dataset.roundId = cb.dataset.roundId || (existing ? existing.id : (res && res.id ? res.id : '')); }
+                        }
+                    } else {
+                        // uncheck idx..maxRounds
+                        for(let r=idx;r<=maxRounds;r++){
+                            const existing = topic.rounds ? topic.rounds.find(rr => rr.round_number === r) : null;
+                            if(existing){
+                                await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'update_round', id: existing.id, updates: { completed: 0 } })
+                                });
+                                existing.completed = 0;
+                            }
+                            const cb = document.querySelector(`.round-checkbox[data-topic-id="${topicId}"][data-round-index="${r}"]`);
+                            if(cb) cb.checked = false;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error cascading round updates:', error);
+                }
+            }
+        });
+
+        // add round button
+        document.getElementById('add-round-btn').addEventListener('click', async () => {
+            if(!state.currentSubjectId) return;
+            try {
+                const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'add_round', subject_id: state.currentSubjectId })
+                });
+                const res = await resp.json();
+                if(res.success){
+                    // reload data from server to get new rounds
+                    await loadData();
+                    renderSubjectDetailPage();
+                }
+            } catch (error) {
+                console.error('Error adding round:', error);
+            }
+        });
+
+        document.body.addEventListener('click', async e => {
+            const dayEl = e.target.closest('.calendar-day');
+            if(dayEl){
+                state.selectedDate = dayEl.dataset.date;
+                renderApp();
+            }
+            if(e.target.classList.contains('delete-topic-btn')) {
+                const topicId = parseInt(e.target.dataset.topicId);
+                if(confirm('¿Estás seguro de que quieres eliminar este tema?')){
+                    try {
+                        await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'delete_topic', id: topicId })
+                        });
+                        const subject = data.subjects.find(s => s.id === state.currentSubjectId);
+                        subject.topics = subject.topics.filter(t => t.id !== topicId);
+                        renderApp();
+                    } catch (error) {
+                        console.error('Error deleting topic:', error);
+                    }
+                }
+            }
+            if(e.target.classList.contains('annotations-btn')){
+                const topicId = parseInt(e.target.dataset.topicId);
+                state._editingTopicId = topicId;
+                openModal('edit-annotations');
+            }
+        });
+        
+        // Drag and Drop Logic
+        document.body.addEventListener('dragstart', e => {
+            const taskEl = e.target.closest('.task');
+            if(taskEl){
+                state.draggedTaskId = parseInt(taskEl.dataset.taskId);
+                try { e.dataTransfer.setData('text/plain', String(state.draggedTaskId)); } catch(_){}
+                taskEl.classList.add('dragging');
+            }
+        });
+
+        document.body.addEventListener('dragend', e => {
+            if(state.draggedTaskId !== null){
+                 document.querySelector(`[data-task-id="${state.draggedTaskId}"]`)?.classList.remove('dragging');
+                 state.draggedTaskId = null;
+            }
+        });
+        
+        calendarGrid.addEventListener('dragover', e => {
+            e.preventDefault();
+        });
+
+        calendarGrid.addEventListener('drop', async e => {
+            e.preventDefault();
+            const dayEl = e.target.closest('.calendar-day');
+            if(dayEl && state.draggedTaskId){
+                const task = data.tasks.find(t => t.id === state.draggedTaskId);
+                if(task){
+                    task.date = dayEl.dataset.date;
+                    try {
+                        await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'update_task', id: state.draggedTaskId, updates: { date: dayEl.dataset.date } })
+                        });
+                    } catch (error) {
+                        console.error('Error updating task date:', error);
+                    }
+                    renderApp();
+                }
+            }
+        });
+
+        // --- INICIALIZACIÓN ---
+        (async () => {
+            const ok = await checkDbConnection();
+            if(ok){
+                await loadData();
+                // Set selected date to today on initial load
+                if(!state.selectedDate) {
+                     const today = new Date();
+                     const year = today.getFullYear();
+                     const month = String(today.getMonth() + 1).padStart(2, '0');
+                     const day = String(today.getDate()).padStart(2, '0');
+                     state.selectedDate = `${year}-${month}-${day}`;
+                }
+                renderApp();
+            }
+            // if not ok, checkDbConnection already shows modal and will allow retry
+        })();
+    });
+    </script>
+</body>
+</html>
+
