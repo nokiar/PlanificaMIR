@@ -1,6 +1,22 @@
 <?php
 // api.php - API para operaciones CRUD
 
+// Endpoint especial para debug
+if (isset($_GET['debug']) && $_GET['debug'] === '1') {
+    echo "<h2>DEBUG API.PHP</h2>";
+    echo "<pre>";
+    echo "HTTP_HOST: " . ($_SERVER['HTTP_HOST'] ?? 'No definido') . "\n";
+    echo "SERVER_NAME: " . ($_SERVER['SERVER_NAME'] ?? 'No definido') . "\n";
+    echo "REQUEST_URI: " . ($_SERVER['REQUEST_URI'] ?? 'No definido') . "\n";
+    echo "</pre>";
+    
+    echo "<h3>Incluyendo config.php...</h3>";
+    require_once 'config.php';
+    echo "<h3>Config.php incluido exitosamente</h3>";
+    exit;
+}
+
+// Configuración de headers
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -12,7 +28,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once 'config.php';
+// Conexión directa a la base de datos (sin config.php por ahora)
+try {
+    // Detectar entorno
+    $httpHost = $_SERVER['HTTP_HOST'] ?? '';
+    $isProduction = ($httpHost !== 'localhost' && !preg_match('/^127\.0\.0\.1/', $httpHost));
+    
+    if ($isProduction) {
+        // Configuración para InfinityFree
+        $host = 'sql104.infinityfree.com';
+        $dbname = 'if0_39980782_planificamir';
+        $username = 'if0_39980782';
+        $password = 'DWccYKXLKSdQpPo';
+        $port = 3306;
+    } else {
+        // Configuración local XAMPP
+        $host = 'localhost';
+        $dbname = 'planificamir';
+        $username = 'root';
+        $password = '';
+        $port = 3306;
+    }
+    
+    $pdo = new PDO("mysql:host=$host;port=$port;dbname=$dbname;charset=utf8", $username, $password);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
+} catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]);
+    exit;
+}
 
  $method = $_SERVER['REQUEST_METHOD'];
 
@@ -203,8 +248,15 @@ function addSubject($name) {
 
 function addTopic($subjectId, $name) {
     global $pdo;
-    $stmt = $pdo->prepare("INSERT INTO topics (subject_id, name) VALUES (?, ?)");
-    $stmt->execute([$subjectId, $name]);
+    // Get the next order_index for this subject
+    $stmt = $pdo->prepare("SELECT MAX(order_index) AS max_order FROM topics WHERE subject_id = ?");
+    $stmt->execute([$subjectId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    $nextOrder = ($row['max_order'] ?? 0) + 1;
+    
+    // Use default numeric values for new topics (16 = "Bajo" category)
+    $stmt = $pdo->prepare("INSERT INTO topics (subject_id, name, importance, rentability, order_index) VALUES (?, ?, 16, 16, ?)");
+    $stmt->execute([$subjectId, $name, $nextOrder]);
     return $pdo->lastInsertId();
 }
 

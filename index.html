@@ -115,15 +115,40 @@
                     </div>
                     <div>
                         <label class="text-xs text-gray-600">Importancia</label>
-                            <select id="filter-importance" class="border p-1 text-sm w-full"><option value="">-</option><option value="Muy alta">Muy alta</option><option value="Alta">Alta</option><option value="Media">Media</option><option value="Baja">Baja</option></select>
+                            <select id="filter-importance" class="border p-1 text-sm w-full">
+                                <option value="">-</option>
+                                <option value="muy-bajo">Muy bajo</option>
+                                <option value="bajo">Bajo</option>
+                                <option value="medio">Medio</option>
+                                <option value="alto">Alto</option>
+                                <option value="muy-alto">Muy alto</option>
+                            </select>
                     </div>
                     <div>
                         <label class="text-xs text-gray-600">Rentabilidad</label>
-                            <select id="filter-rentability" class="border p-1 text-sm w-full"><option value="">-</option><option value="Muy alta">Muy alta</option><option value="Alta">Alta</option><option value="Media">Media</option><option value="Baja">Baja</option></select>
+                            <select id="filter-rentability" class="border p-1 text-sm w-full">
+                                <option value="">-</option>
+                                <option value="muy-bajo">Muy bajo</option>
+                                <option value="bajo">Bajo</option>
+                                <option value="medio">Medio</option>
+                                <option value="alto">Alto</option>
+                                <option value="muy-alto">Muy alto</option>
+                            </select>
                     </div>
                     <div>
                         <label class="text-xs text-gray-600">Vueltas</label>
                         <div id="rounds-filters" class="flex items-center gap-1 flex-wrap"></div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-600">Ordenar por</label>
+                        <select id="sort-by" class="border p-1 text-sm w-full">
+                            <option value="order">Orden del libro</option>
+                            <option value="name">Nombre (A-Z)</option>
+                            <option value="importance">Importancia</option>
+                            <option value="rentability">Rentabilidad</option>
+                            <option value="reading">Lectura</option>
+                            <option value="esquema">Esquema</option>
+                        </select>
                     </div>
                     <div class="md:col-span-3 flex gap-2 justify-end">
                         <button type="button" id="clear-filters-btn" class="px-3 py-1 bg-gray-200 rounded">Limpiar</button>
@@ -165,6 +190,18 @@
     <script>
     document.addEventListener('DOMContentLoaded', () => {
 
+        // --- CONFIGURACIÓN DE API ---
+        // Detectar automáticamente si estamos en producción o desarrollo
+        const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+        const API_URL = isProduction ? './api.php' : 'http://localhost/PLANIFICAMIR/api.php';
+        
+        // Debug
+        console.log('Environment Detection:', {
+            hostname: window.location.hostname,
+            isProduction: isProduction,
+            API_URL: API_URL
+        });
+
         // --- ESTADO Y DATOS DE LA APLICACIÓN ---
         let state = {
             currentDate: new Date(),
@@ -204,7 +241,7 @@
         // --- PERSISTENCIA DE DATOS ---
         const loadData = async () => {
             try {
-                const response = await fetch('http://localhost/PLANIFICAMIR/api.php');
+                const response = await fetch(API_URL);
                 const result = await response.json();
                 data.subjects = result.subjects || [];
                 data.tasks = result.tasks || [];
@@ -218,7 +255,7 @@
         // Check DB/API connectivity before proceeding. If it fails, show modal with instructions
         const checkDbConnection = async () => {
             try {
-                const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', { cache: 'no-store' });
+                const resp = await fetch(API_URL, { cache: 'no-store' });
                 if(!resp.ok) throw new Error('HTTP ' + resp.status);
                 const json = await resp.json().catch(() => null);
                 const ok = json && (Array.isArray(json.subjects) || Array.isArray(json.tasks) || json.success !== undefined);
@@ -402,7 +439,7 @@
                     e.stopPropagation();
                     task.completed = checkbox.checked;
                     try {
-                        await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                        await fetch(API_URL, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'update_task', id: task.id, updates: { completed: checkbox.checked } })
@@ -433,19 +470,53 @@
             };
         };
 
-        // Return background color classes for importance/rentability values (use white text)
-        // Pastel tone mapping. Use darker text where needed for contrast.
-        const importanceBgClass = (imp) => {
-            switch(imp){
-                case 'Muy alta': return 'bg-green-700 text-white';    // deeper pastel green
-                case 'Alta': return 'bg-green-300 text-black';       // light pastel green
-                case 'Media': return 'bg-yellow-200 text-black';     // pastel yellow (requested)
-                case 'Baja': return 'bg-red-200 text-black';         // pastel red
-                default: return '';
+        // Convertir valor numérico a categoría
+        const getScoreCategory = (score) => {
+            const num = parseInt(score);
+            if (num >= 66) return 'muy-alto';
+            if (num >= 51) return 'alto';
+            if (num >= 31) return 'medio';
+            if (num >= 16) return 'bajo';
+            if (num >= 0) return 'muy-bajo';
+            return '';
+        };
+
+        // Convertir categoría a valor numérico (valor más bajo del rango)
+        const getCategoryMinValue = (category) => {
+            switch(category) {
+                case 'muy-alto': return 66;
+                case 'alto': return 51;
+                case 'medio': return 31;
+                case 'bajo': return 16;
+                case 'muy-bajo': return 0;
+                default: return 16;
             }
         };
 
-        const rentabilityBgClass = (r) => importanceBgClass(r);
+        // Convertir categoría a texto legible
+        const getCategoryText = (category) => {
+            switch(category) {
+                case 'muy-alto': return 'Muy alto';
+                case 'alto': return 'Alto';
+                case 'medio': return 'Medio';
+                case 'bajo': return 'Bajo';
+                case 'muy-bajo': return 'Muy bajo';
+                default: return '-';
+            }
+        };
+
+        // Return background color classes for importance/rentability values
+        const importanceBgClass = (score) => {
+            const num = parseInt(score);
+            if (num >= 66) return 'bg-green-700 text-white';      // Muy alto (66-74)
+            if (num >= 51) return 'bg-green-300 text-black';      // Alto (51-65)
+            if (num >= 31) return 'bg-yellow-200 text-black';     // Medio (31-50)
+            if (num >= 16) return 'bg-red-200 text-black';        // Bajo (16-30)
+            if (num >= 0) return 'bg-red-800 text-white';         // Muy bajo (0-15) - rojo oscuro
+            return '';
+        };
+
+        const rentabilityBgClass = (score) => importanceBgClass(score);
 
         const renderSubjectDetailPage = () => {
             const subject = data.subjects.find(s => s.id === state.currentSubjectId);
@@ -498,8 +569,32 @@
             if(filters.name) filtered = filtered.filter(t => t.name.toLowerCase().includes(filters.name));
             if(filters.reading !== '') filtered = filtered.filter(t => String(t.reading) === filters.reading);
             if(filters.esquema !== '') filtered = filtered.filter(t => String(t.esquema) === filters.esquema);
-            if(filters.importance) filtered = filtered.filter(t => t.importance === filters.importance);
-            if(filters.rentability) filtered = filtered.filter(t => t.rentability === filters.rentability);
+            if(filters.importance) {
+                filtered = filtered.filter(t => {
+                    const score = parseInt(t.importance) || 0;
+                    switch(filters.importance) {
+                        case 'muy-bajo': return score >= 0 && score <= 15;
+                        case 'bajo': return score >= 16 && score <= 30;
+                        case 'medio': return score >= 31 && score <= 50;
+                        case 'alto': return score >= 51 && score <= 65;
+                        case 'muy-alto': return score >= 66 && score <= 74;
+                        default: return true;
+                    }
+                });
+            }
+            if(filters.rentability) {
+                filtered = filtered.filter(t => {
+                    const score = parseInt(t.rentability) || 0;
+                    switch(filters.rentability) {
+                        case 'muy-bajo': return score >= 0 && score <= 15;
+                        case 'bajo': return score >= 16 && score <= 30;
+                        case 'medio': return score >= 31 && score <= 50;
+                        case 'alto': return score >= 51 && score <= 65;
+                        case 'muy-alto': return score >= 66 && score <= 74;
+                        default: return true;
+                    }
+                });
+            }
 
             // rounds filter - single select by round_number
             const selectedRound = document.getElementById('round-filter-select') ? document.getElementById('round-filter-select').value : '';
@@ -512,7 +607,33 @@
                 });
             }
 
-            filtered.sort((a,b) => a.name.localeCompare(b.name)).forEach(topic => {
+            // Apply sorting based on selected option
+            const sortBy = document.getElementById('sort-by') ? document.getElementById('sort-by').value : 'order';
+            
+            switch(sortBy) {
+                case 'order':
+                    filtered.sort((a,b) => (a.order_index || 0) - (b.order_index || 0));
+                    break;
+                case 'name':
+                    filtered.sort((a,b) => a.name.localeCompare(b.name));
+                    break;
+                case 'importance':
+                    filtered.sort((a,b) => (parseInt(b.importance) || 0) - (parseInt(a.importance) || 0));
+                    break;
+                case 'rentability':
+                    filtered.sort((a,b) => (parseInt(b.rentability) || 0) - (parseInt(a.rentability) || 0));
+                    break;
+                case 'reading':
+                    filtered.sort((a,b) => (b.reading ? 1 : 0) - (a.reading ? 1 : 0));
+                    break;
+                case 'esquema':
+                    filtered.sort((a,b) => (b.esquema ? 1 : 0) - (a.esquema ? 1 : 0));
+                    break;
+                default:
+                    filtered.sort((a,b) => (a.order_index || 0) - (b.order_index || 0));
+            }
+
+            filtered.forEach(topic => {
                 const row = document.createElement('tr');
                 row.className = 'border-b';
                 // build rounds cells in order V1..Vn by matching round_number
@@ -528,25 +649,31 @@
                     <td class="p-3 text-center"><input type="checkbox" class="h-4 w-4" data-topic-id="${topic.id}" data-prop="reading" ${topic.reading ? 'checked' : ''}></td>
                     <td class="p-3 text-center"><input type="checkbox" class="h-4 w-4" data-topic-id="${topic.id}" data-prop="esquema" ${topic.esquema ? 'checked' : ''}></td>
                     ${roundsHtml}
-                    <td class="p-3 text-center"><select class="border rounded p-1 w-full importance-select" data-topic-id="${topic.id}" data-prop="importance">
-                        <option value="Baja" style="background-color:#fecaca;color:#000000" ${topic.importance === 'Baja' ? 'selected' : ''}>Baja</option>
-                        <option value="Media" style="background-color:#fef08a;color:#000000" ${topic.importance === 'Media' ? 'selected' : ''}>Media</option>
-                        <option value="Alta" style="background-color:#86efac;color:#000000" ${topic.importance === 'Alta' ? 'selected' : ''}>Alta</option>
-                        <option value="Muy alta" style="background-color:#16a34a;color:#ffffff" ${topic.importance === 'Muy alta' ? 'selected' : ''}>Muy alta</option>
-                    </select></td>
-                    <td class="p-3 text-center"><select class="border rounded p-1 w-full rentability-select" data-topic-id="${topic.id}" data-prop="rentability">
-                        <option value="Baja" style="background-color:#fecaca;color:#000000" ${topic.rentability === 'Baja' ? 'selected' : ''}>Baja</option>
-                        <option value="Media" style="background-color:#fef08a;color:#000000" ${topic.rentability === 'Media' ? 'selected' : ''}>Media</option>
-                        <option value="Alta" style="background-color:#86efac;color:#000000" ${topic.rentability === 'Alta' ? 'selected' : ''}>Alta</option>
-                        <option value="Muy alta" style="background-color:#16a34a;color:#ffffff" ${topic.rentability === 'Muy alta' ? 'selected' : ''}>Muy alta</option>
-                    </select></td>
                     <td class="p-3 text-center">
-                    <button class="annotations-btn px-3 py-1 rounded border" data-topic-id="${topic.id}" style="min-width:80px;">
+                        <select class="border rounded p-1 w-full importance-select ${importanceBgClass(topic.importance)}" data-topic-id="${topic.id}" data-prop="importance">
+                            <option value="muy-bajo" style="background-color:#7f1d1d;color:#ffffff" ${getScoreCategory(topic.importance) === 'muy-bajo' ? 'selected' : ''}>Muy bajo</option>
+                            <option value="bajo" style="background-color:#fecaca;color:#000000" ${getScoreCategory(topic.importance) === 'bajo' ? 'selected' : ''}>Bajo</option>
+                            <option value="medio" style="background-color:#fef08a;color:#000000" ${getScoreCategory(topic.importance) === 'medio' ? 'selected' : ''}>Medio</option>
+                            <option value="alto" style="background-color:#86efac;color:#000000" ${getScoreCategory(topic.importance) === 'alto' ? 'selected' : ''}>Alto</option>
+                            <option value="muy-alto" style="background-color:#16a34a;color:#ffffff" ${getScoreCategory(topic.importance) === 'muy-alto' ? 'selected' : ''}>Muy alto</option>
+                        </select>
+                    </td>
+                    <td class="p-3 text-center">
+                        <select class="border rounded p-1 w-full rentability-select ${rentabilityBgClass(topic.rentability)}" data-topic-id="${topic.id}" data-prop="rentability">
+                            <option value="muy-bajo" style="background-color:#7f1d1d;color:#ffffff" ${getScoreCategory(topic.rentability) === 'muy-bajo' ? 'selected' : ''}>Muy bajo</option>
+                            <option value="bajo" style="background-color:#fecaca;color:#000000" ${getScoreCategory(topic.rentability) === 'bajo' ? 'selected' : ''}>Bajo</option>
+                            <option value="medio" style="background-color:#fef08a;color:#000000" ${getScoreCategory(topic.rentability) === 'medio' ? 'selected' : ''}>Medio</option>
+                            <option value="alto" style="background-color:#86efac;color:#000000" ${getScoreCategory(topic.rentability) === 'alto' ? 'selected' : ''}>Alto</option>
+                            <option value="muy-alto" style="background-color:#16a34a;color:#ffffff" ${getScoreCategory(topic.rentability) === 'muy-alto' ? 'selected' : ''}>Muy alto</option>
+                        </select>
+                    </td>
+                    <td class="p-3 text-center">
+                    <button class="annotations-btn py-1 rounded border" data-topic-id="${topic.id}" style="width:80px;">
                         ${topic.annotations ? 'Ver' : 'Añadir'}
                     </button>
                 </td>
                      <td class="p-3 text-center">
-                        <button class="delete-topic-btn text-red-500 hover:text-red-700 font-bold" data-topic-id="${topic.id}">X</button>
+                        <button class="delete-topic-btn bg-red-500 text-white hover:bg-red-600 font-bold rounded border" data-topic-id="${topic.id}" style="width:32px; height:32px; min-width:32px;">X</button>
                     </td>
                 `;
                 topicsTableBody.appendChild(row);
@@ -555,25 +682,27 @@
             // update topics count (show next to subject title)
             document.getElementById('subject-topics-count').textContent = `${filtered.length} temas`;
 
-            // colorize selects (apply text color classes, remove any previous color classes)
-            const bgClassCandidates = ['bg-green-900','bg-green-800','bg-green-600','bg-orange-600','bg-yellow-600','bg-red-600','text-white','text-black'];
-            Array.from(document.querySelectorAll('.importance-select')).forEach(sel => {
+            // colorize selects (apply background color classes based on selected category)
+            const bgClassCandidates = ['bg-green-700','bg-green-300','bg-yellow-200','bg-red-200','bg-red-800','text-white','text-black'];
+            Array.from(document.querySelectorAll('.importance-select')).forEach(select => {
                 // remove possible bg/text classes
-                bgClassCandidates.forEach(c => sel.classList.remove(c));
-                const cls = importanceBgClass(sel.value);
-                if(cls) cls.split(' ').forEach(c => sel.classList.add(c));
+                bgClassCandidates.forEach(c => select.classList.remove(c));
+                const numericValue = getCategoryMinValue(select.value);
+                const cls = importanceBgClass(numericValue);
+                if(cls) cls.split(' ').forEach(c => select.classList.add(c));
             });
-            Array.from(document.querySelectorAll('.rentability-select')).forEach(sel => {
-                bgClassCandidates.forEach(c => sel.classList.remove(c));
-                const cls = rentabilityBgClass(sel.value);
-                if(cls) cls.split(' ').forEach(c => sel.classList.add(c));
+            Array.from(document.querySelectorAll('.rentability-select')).forEach(select => {
+                bgClassCandidates.forEach(c => select.classList.remove(c));
+                const numericValue = getCategoryMinValue(select.value);
+                const cls = rentabilityBgClass(numericValue);
+                if(cls) cls.split(' ').forEach(c => select.classList.add(c));
             });
 
             // style annotation buttons: 'Ver' => blue bg white text, 'Añadir' => white bg black text; ensure equal width
             Array.from(document.querySelectorAll('.annotations-btn')).forEach(btn => {
                 btn.classList.remove('bg-blue-500','text-white','bg-white','text-black','border-gray-300');
-                // ensure same min width
-                btn.style.minWidth = '80px';
+                // ensure fixed width for perfect alignment
+                btn.style.width = '80px';
                 if(btn.textContent.trim() === 'Ver'){
                     btn.classList.add('bg-blue-500','text-white');
                     btn.classList.remove('border');
@@ -585,8 +714,9 @@
             // wire up round filter change
             const rf = document.getElementById('round-filter-select');
             if(rf) rf.addEventListener('change', renderSubjectDetailPage);
-            // wire up top filters
-            ['filter-name','filter-reading','filter-esquema','filter-importance','filter-rentability'].forEach(id => document.getElementById(id).addEventListener('input', renderSubjectDetailPage));
+            // wire up top filters and sort dropdown
+            ['filter-name','filter-reading','filter-esquema','filter-importance','filter-rentability','sort-by'].forEach(id => document.getElementById(id).addEventListener('input', renderSubjectDetailPage));
+            document.getElementById('sort-by').addEventListener('change', renderSubjectDetailPage);
         };
 
         // --- LÓGICA DE MODALES ---
@@ -706,8 +836,9 @@
         // Clear filters (filtering is immediate)
         document.getElementById('clear-filters-btn').addEventListener('click', () => {
             document.getElementById('filters-form').reset();
-            // clear round select
+            // clear round select and sort dropdown
             const rf = document.getElementById('round-filter-select'); if(rf) rf.value = '';
+            const sb = document.getElementById('sort-by'); if(sb) sb.value = 'order';
             renderSubjectDetailPage();
         });
 
@@ -716,7 +847,7 @@
             if(!state.currentSubjectId) return;
             if(!confirm('Eliminar la última vuelta para esta asignatura?')) return;
             try {
-                const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                const resp = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'delete_round', subject_id: state.currentSubjectId })
@@ -751,7 +882,7 @@
                 const subjectName = document.getElementById('subject-name').value.trim();
                 if (subjectName) {
                     try {
-                        const response = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                        const response = await fetch(API_URL, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'add_subject', name: subjectName })
@@ -774,19 +905,22 @@
                 const subject = data.subjects.find(s => s.id === state.currentSubjectId);
                 if (topicName && subject) {
                     try {
-                        const response = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                        const response = await fetch(API_URL, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'add_topic', subject_id: state.currentSubjectId, name: topicName })
                         });
                         const result = await response.json();
                         if (result.success) {
+                            // Calculate next order_index for new topic
+                            const maxOrder = Math.max(0, ...subject.topics.map(t => t.order_index || 0));
                             subject.topics.push({ 
                                 id: result.id, 
                                 name: topicName, 
                                 reading: false, 
                                 esquema: false, 
                                 importance: 'Media', rentability: 'Media',
+                                order_index: maxOrder + 1,
                                 rounds: []
                             });
                             renderSubjectDetailPage();
@@ -802,7 +936,7 @@
                 const taskName = document.getElementById('task-name').value.trim();
                 if(taskName && state.selectedDate){
                     try {
-                        const response = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                        const response = await fetch(API_URL, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'add_task', name: taskName, date: state.selectedDate })
@@ -829,7 +963,7 @@
                 const topicId = state._editingTopicId;
                 if(topicId != null){
                     try {
-                        const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                        const resp = await fetch(API_URL, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'update_topic', id: topicId, updates: { annotations: txt } })
                         });
@@ -857,21 +991,30 @@
                 const subject = data.subjects.find(s => s.id === state.currentSubjectId);
                 const topic = subject.topics.find(t => t.id === topicId);
                 if(topic){
-                    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-                    topic[prop] = value;
+                    let value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+                    
+                    // Si es importancia o rentabilidad, convertir categoría a valor numérico
+                    if(prop === 'importance' || prop === 'rentability') {
+                        const numericValue = getCategoryMinValue(value);
+                        topic[prop] = numericValue; // Actualizar en memoria con valor numérico
+                        value = numericValue; // Enviar valor numérico a la API
+                    } else {
+                        topic[prop] = value;
+                    }
+                    
                     try {
-                        await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                        await fetch(API_URL, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'update_topic', id: topicId, updates: { [prop]: value } })
                         });
                         // Immediately update select background/text classes so the change is visible
                         if(e.target.tagName === 'SELECT' && (prop === 'importance' || prop === 'rentability')){
-                            const sel = e.target;
-                            const bgClassCandidates = ['bg-green-700','bg-green-300','bg-yellow-200','bg-red-200','bg-green-900','bg-green-600','bg-orange-600','bg-red-600','text-white','text-black'];
-                            bgClassCandidates.forEach(c => sel.classList.remove(c));
+                            const select = e.target;
+                            const bgClassCandidates = ['bg-green-700','bg-green-300','bg-yellow-200','bg-red-200','bg-red-800','text-white','text-black'];
+                            bgClassCandidates.forEach(c => select.classList.remove(c));
                             const cls = prop === 'importance' ? importanceBgClass(value) : rentabilityBgClass(value);
-                            if(cls) cls.split(' ').forEach(c => sel.classList.add(c));
+                            if(cls) cls.split(' ').forEach(c => select.classList.add(c));
                         }
                     } catch (error) {
                         console.error('Error updating topic:', error);
@@ -899,14 +1042,14 @@
                             const existing = topic.rounds ? topic.rounds.find(rr => rr.round_number === r) : null;
                             if(existing){
                                 // update
-                                await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                                await fetch(API_URL, {
                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ action: 'update_round', id: existing.id, updates: { completed: 1 } })
                                 });
                                 existing.completed = 1;
                             } else {
                                 // create
-                                const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                                const resp = await fetch(API_URL, {
                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ action: 'upsert_round', topic_id: topicId, round_number: r, completed: 1 })
                                 });
@@ -926,7 +1069,7 @@
                         for(let r=idx;r<=maxRounds;r++){
                             const existing = topic.rounds ? topic.rounds.find(rr => rr.round_number === r) : null;
                             if(existing){
-                                await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                                await fetch(API_URL, {
                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ action: 'update_round', id: existing.id, updates: { completed: 0 } })
                                 });
@@ -946,7 +1089,7 @@
         document.getElementById('add-round-btn').addEventListener('click', async () => {
             if(!state.currentSubjectId) return;
             try {
-                const resp = await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                const resp = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'add_round', subject_id: state.currentSubjectId })
@@ -972,7 +1115,7 @@
                 const topicId = parseInt(e.target.dataset.topicId);
                 if(confirm('¿Estás seguro de que quieres eliminar este tema?')){
                     try {
-                        await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                        await fetch(API_URL, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'delete_topic', id: topicId })
@@ -1021,7 +1164,7 @@
                 if(task){
                     task.date = dayEl.dataset.date;
                     try {
-                        await fetch('http://localhost/PLANIFICAMIR/api.php', {
+                        await fetch(API_URL, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'update_task', id: state.draggedTaskId, updates: { date: dayEl.dataset.date } })
